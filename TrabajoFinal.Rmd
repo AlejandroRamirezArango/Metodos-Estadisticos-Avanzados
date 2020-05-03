@@ -1,0 +1,683 @@
+---
+title: "Métodos Estadísticos Avanzados - Trabajo Final"
+author: "Alejandro Ramirez Arango"
+date: "13/4/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(kableExtra)
+```
+
+
+Este informe, junto con toda la información utilizada para su desarrollo se puede consultar en el siguiente repositorio de GitHub:
+
+<https://github.com/AlejandroRamirezArango/Metodos-Estadisticos-Avanzados/>
+
+
+# 1. DATOS
+
+
+## 1.1 DESCRIPCIÓN DE LOS DATOS
+
+La extracción de los datos consiste en un proceso manual en el cual se consultaron diversas fuentes oficiales para obtener la información. La información que se busca explicar son los **Costos de Ventas** de las Pymes reportado según la norma NIIF a la superfinanciera. El objetivo es establecer un modelo de regresión donde se vea la variación de este valor respecto a datos macroeconómicos tales como la TRM, inflación, entre otros.
+
+De acuerdo a las NIIF, las empresas se agrupan en las siguientes estructuras, tal como se muestra en la figura 1:
+
+
+![Figura 1. División de las PYMES dsegún NIIF. Tomado de la Superfinanciera.](images/EstructuraGeneral.png)
+
+
+Para este ejercicio, se toma como la sección de interés la **F** que abarca la **Construcción**. A sus vez esta sección se divide en varios grupos y clases, de la cual tomamos el **Grupo 411 Clase 1** que corresponde a la **Construcción de Edifición Residenciales**. En ese sentido se busca hallar un  modelo que explique la variación de las Pymes del sector construcción de edificio residenciales según la variación de variables macroecómicas. La figura 2 muestra detalle de la sección F.
+
+
+![Figura 2. Detalle de la Sección F de la clasificación NIIF. Tomado de la Superfinanciera..](images/DescripcionSeccionF.png)
+
+
+Los datos se descargaron de la página de la superfinanciera y se extraen de manera manual usando filtros de Excel (se filtra por la división, grupo y clase elegidos para el taller - F4111) y copiando la información de interés en otro archivo Excel. El rango de fechas tomado es de 2016 a 2018 según lineamientos del taller propuesto en clase. El **número de empresas** que se encontró aplicando este filtro **fue de 77**. La figura 3 muestra un ejemplo del ejercicio realizado en Excel.
+
+
+![Figura 3. Extracción de la información de Costo de Ventas a través de Excel.](images/ExcelNIIF.png)
+
+
+La información se extrae de la forma descrita para cada uno de los años y se almacena en otro archivo Excel. La información que se almacena es: NIT, Fecha y Costo de Ventas.
+
+
+<p align="center">
+  <img width="433" height="591" src="images/ExcelDataBaseI.png">
+</p>
+
+
+Por otra parte, la **información macroeconómica** se consulta a través de diversas fuentes oficiales. Los links donde se descargaron los datos son los siguientes:
+
+* IPP
+  <https://www.dane.gov.co/index.php/estadisticas-por-tema/precios-y-costos/indice-de-precios-del-productor-ipp>
+
+* IPC
+  <https://www.dane.gov.co/index.php/estadisticas-por-tema/precios-y-costos/indice-de-precios-al-consumidor-ipc>
+
+* Del banco de la república a través del portal, se obtienen varios indicadores de interés.
+  <https://totoro.banrep.gov.co/analytics/saw.dll?Portal>
+
+* Balance Fiscal (Ingresos - Gastos)
+  <https://www.banrep.gov.co/es/series-estadisticas/see_finanzas_publi.htm>
+
+
+Toda la información se agrupa de forma manual en un archivo Excel con el nombre ***Data_Macroeconomica.xlsx***. La razón de hacer esta agrupación manueal es debido a que la estructura de los datos no son uniformes lo que hace difícil su implementación a través de código. La figura 4 muestra una imagen con la información recolectada de las fuentes mencionadas. Además se adiciona una variable binaria que indica si hubo elecciones o no, más con la intención académica de ensayar el manejo de este tipo de variables y observar si este suceso que en el país mueven diversos sectores de la economía, tiene alguna influencia o no con en el grupo de estudio elegido.
+
+
+![Figura 4. Base de datos de Excel con la información económica.](images/DatosMacroEcon.png)
+
+
+Finalmente esta información se une a través de funciones de Excel (específicamente Buscarv) para formar la base datos definitiva con la que se va a trabajar. Este documento se almacena con el nombre de **DataBase.xlsx** y la figura 5 muestra un pantallazo con de la forma final de esta base de datos.
+
+
+![Figura 5. Base de datos de Excel con la información económica y de costos de ventas.](images/ExcelDataBaseII.png)
+
+
+## 1.2 CARGA DE LA INFORMACIÓN EN EL APLICATIVO
+
+Se procede a cargar en memoria la base de datos creada (*DataBase.xlsx*). Aprovechando el pequeño tamaño de los datos y por tanto su bajo efecto en la memoria del equipo, se crean diversas copias de los datos a lo largo del taller, dependiendo de las necesidades que se tengan en cada modelo.
+
+```{r}
+data_superfinanciera <- read_excel("DataBase.xlsx")
+kable(head(data_superfinanciera))
+```
+
+
+## 1.3 LIMPIEZA DE LA INFORMACIÓN
+
+Inicialmente se procede con una limpieza general de los datos, **se precede a remover** las empresas (NIT) que tengan en alguno de sus años **costo de ventas igual 0**. Esto se hace porque el objetivo es conocer el impacto de las variables macroeconómicas en este sector y empresas con valor 0 no aportan información para este estudio (Además de que no cuentan con información histórica completa del 2016 a 2018). Este proceso se realiza a través de programación.
+
+***Nota:*** *El motivo de que la información por NIT no esté completa, se debe a que en la construcción manual no se hizo por NIT verificando que estuviera en los 3 años, sino que se tomó directamente toda la información del sector económico elegido y se almacenó en la base de datos.*
+
+
+```{r}
+#Se almacena el número de registros de la base de datos cargada
+num_fil <- dim(data_superfinanciera)[1]
+
+#Se encuentran los NIT que no se tomaran en cuenta en el estudio
+Nit_borrar <- subset(data_superfinanciera[data_superfinanciera$Costo_ventas == 0,], select = c("NIT"))
+
+#Se filtran los datos que cumplan el Nit anterior y se "borran". Se reescribe la base de datos.
+data_superfinanciera <- data_superfinanciera[!(data_superfinanciera$NIT %in% Nit_borrar$NIT),]
+```
+
+
+## 1.4 VALORES EN CONSTANTES
+
+La información a predecir de Costo de Ventas, así como las variables explicativas Balance fiscal, PIB y Salario Mínino, al ser dinero a través del tiempo se ven afectados por la inflación del país. Dado que este es un efecto conocido y que puede generar problemas al ingresar tendencia a los datos, se opta por remover del análisis su influencia pasando la información a pesos constantes de 2018 (113.86) a través del siguiente código:
+
+
+```{r}
+IPC_n <- 113.86
+data_superfinanciera$Costo_ventas_cte <- data_superfinanciera$Costo_ventas*IPC_n/data_superfinanciera$IPCdic_empalme
+data_superfinanciera$PIB_2015_cte <- data_superfinanciera$PIB_2015*IPC_n/data_superfinanciera$IPCdic_empalme
+data_superfinanciera$SMMLV_cte <- data_superfinanciera$SMMLV*IPC_n/data_superfinanciera$IPCdic_empalme
+data_superfinanciera$Balance_Fiscal_cte <- data_superfinanciera$Balance_Fiscal*IPC_n/data_superfinanciera$IPCdic_empalme
+```
+
+
+## 1.5 TRANSFORMACIÓN DE LOS DATOS
+
+Una vez limpia la base de datos de aquellos registros que no son de interés se procede hacer una descripcción general de los datos. La siguiente tabla obtenida con la función **summary** permite dar una mirada rápida a información básica de estadística descriptiva de los datos:
+
+
+```{r}
+(summary(data_superfinanciera))
+
+```
+
+
+De la tabla anterior se puede observar que las magnitudes entre las variables no son comparables, lo que puede ocasionar problemas de escala en los modelos. Para solucionar lo anterior se procede a escalar los datos a través de la función **scale** la cuál permite escalar los datos por varianza y centrar los datos por media, ambos de manera independiente. Se decide escalar los datos más no centrarlos. Al no centrar se debe tener presente que el intercepto es relevante en los resultados que se obtenga de los modelos:
+
+
+```{r}
+
+# Nombre de las variables que no se desean escalar, en nuestro caso es Year y  NIT
+varnames <- c("Year", "NIT", "elecciones")
+
+# Vector que indica las variables que no se desean escalar
+index <- names(data_superfinanciera) %in% varnames
+
+
+#data_superfinanciera <- scale(data_superfinanciera, center = FALSE, scale = TRUE)
+data_superfinanciera[, !index] <- scale(data_superfinanciera[, !index], center = FALSE, scale = TRUE)
+data_superfinanciera <- data.frame(data_superfinanciera) #Para convertir de nuevo en dataframe
+(summary(data_superfinanciera))
+```
+
+
+
+# 2. ESTADÍSTICA DESCRIPTIVA
+
+
+## 2.1 VISUALIZACIÓN DE LOS DATOS
+
+Antes que nada se preceda a validar visualmente si los datos a predecir siguen una distribución normal. Para esto se usa la función **hist**, el cuál grafica un histograma a partir de los datos:
+
+```{r}
+hist(data_superfinanciera$Costo_ventas_cte) 
+```
+
+
+Claramente los datos no siguen una distribución normal y aunque los datos están escalados se observa que las magnitudes entre las empresas son muy diferentes, dado que existen empresas con Costos de Ventas que están varias veces por encima del promedio. De los datos sin escalar se observa que el valor mínimo fue de COP20.000 y el máximo de COP59.136.920. Para solucionar el problema de escala se procede a sacar el logaritmo de esta variable:
+
+
+```{r}
+data_superfinanciera$Costo_ventas_cte_log <- log(data_superfinanciera$Costo_ventas_cte)
+hist(data_superfinanciera$Costo_ventas_cte_log)
+```
+
+
+Se observa que la distribución, aunque todavía no es normal, si presenta un mejor aspecto respecto a la figura anterior. Se procede a crear los modelos tomando en cuenta estas transformaciones.
+
+Al graficar los datos mediante un boxplot con la función **boxplot** de R, se observa que aunque hay alta variación por cada año en los Costos de Ventas es posible explicar algo de la tendencia.
+
+
+```{r fig.align="center"}
+boxplot(Costo_ventas_cte_log~Year, data = data_superfinanciera)
+```
+
+
+Ahora se busca visualizar con colores la evolución de los Costos de Ventas de las empresas a través del tiempo. Aunque los puntos se ven mezclados es posible visualizar en algunos casos que las empresas tienen comportamientos diferentes en tendencia. 
+
+
+```{r fig.align="center"}
+plot(data_superfinanciera$Year,data_superfinanciera$Costo_ventas_cte_log,col=data_superfinanciera$NIT)
+```
+
+
+Una forma visual más clara de observar lo anterior es a través del gráfico de spaguetti mediante la función **xyplot**. Esta función permite visualizar cada empresa de forma individual y comparar rápidamente su comportamiento a través del tiempo, Dado que se tiene un gran número de empresas, se decide graficar solo una parte aleatorias de ellas.
+
+
+```{r fig.align="center"}
+require(lattice)
+
+#Muestra aleatoria
+num_muestras <- 15
+set.seed(22)
+NIT_sample <- sample(unique(data_superfinanciera$NIT), num_muestras)
+sample_data <- data_superfinanciera[data_superfinanciera$NIT %in% NIT_sample ,]
+
+xyplot(Costo_ventas_cte~Year|NIT,data = sample_data, type = c("g","p","r"),
+       index = function(x,y) coef(lm(y~x))[1],
+       xlab = "Año Reporte NIIF",
+       ylab = "Costo de Ventas(COP)",
+       aspect = "xy")
+```
+
+
+## 2.1 SELECCIÓN DE DATOS PARA EL MODELO.
+
+Se procede a realizar un chequeo de correlación entre las variables explicativas, con el objetivo de cumplir el supuesto de independiencia y así evitar problemas en la creación del modelo lineal. Inicialmente se hace de manera visual
+
+Se crea una copia de los datos tomando los datos que se usarán para el modelamiento:
+
+
+```{r}
+data <- subset(data_superfinanciera, select = c("Year", "Costo_ventas_cte_log", "PIB_2015_cte", "tasa_desempleo", "SMMLV_cte", "TRM", "Poblacion", "tasa_BancoRep", "IPCdic_empalme", "IPPdic", "IPPindustria", "elecciones", "Balance_Fiscal_cte"))
+```
+
+
+```{r}
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(0, 1, 0, 1))
+    r <- abs(cor(x, y))
+    txt <- format(c(r, 0.123456789), digits = digits)[1]
+    txt <- paste0(prefix, txt)
+    if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+    text(0.5, 0.5, txt, cex = cex.cor * r)
+}
+
+panel.hist <- function(x, ...)
+{
+    usr <- par("usr"); on.exit(par(usr))
+    par(usr = c(usr[1:2], 0, 1.5) )
+    h <- hist(x, plot = FALSE)
+    breaks <- h$breaks; nB <- length(breaks)
+    y <- h$counts; y <- y/max(y)
+    rect(breaks[-nB], 0, breaks[-1], y, col = "red", ...)
+}
+```
+
+
+En este Gráfico de dispersión por pares el tamaño del número indica que tan correlacionado está el par de variables, es decir a menor correlación menos visible será el valor.
+
+
+```{r fig.align="center"}
+pairs(data[,-1], diag.panel = panel.hist, lower.panel = panel.cor)
+```
+
+
+Debido a la poca cantidad de datos, se observa que hay tan poca variación en los datos que la correlación entre algunos pares de variables es de 1. Esta alta correlación puede representar un problema de singularidad más adelante al aplicar los modelos de regresión lineal. 
+
+Como ejecicio se realiza este mismo análisis únicamente con las **variables macroeconómicas**.
+
+
+```{r fig.align="center"}
+data_macroeconomica <- read_excel("InfoFinanciera/Data_Macroeconomica.xlsx")
+pairs(data_macroeconomica[,-1], diag.panel = panel.hist, lower.panel = panel.cor)
+
+```
+
+
+La gráfica muestra que hay variables macroecómicas correlacionadas, pero no tantas como se observaron con la base de datos original con solo 3 años de historia. Se procede a removar las variables económicas que se explican con otras, en este sentido se opta por dejar de las siguientes variables:
+
+- PIB_2015
+
+- elecciones
+
+- Balance_Fiscal_cte
+
+Graficando este nuevo conjunto de datos para los 3 años de estudio del taller se obtiene lo siguiente:
+
+
+```{r fig.align="center"}
+data <- subset(data_superfinanciera, select = c("Year", "PIB_2015_cte", "elecciones", "Balance_Fiscal_cte"))
+pairs(data[,-1], diag.panel = panel.hist, lower.panel = panel.cor)
+```
+
+
+Como se observa existe gran correlación entre los datos, debido principalmente por la poca cantidad de datos. **Se elige dejar como variable explicativa económica solo PIB** y como ensayo la variable binaria elecciones:
+
+Se procede a crear el conjunto de datos con las variables seleccionadas con el cuál se creará el modelo:
+
+
+```{r}
+data <- subset(data_superfinanciera, select = c("Year", "NIT", "Costo_ventas_cte_log", "PIB_2015_cte", "elecciones"))
+
+```
+
+
+
+# 3. MODELAMIENTO
+
+
+## 3.1 Particionamiento del conjunto de datos
+
+Para el uso del modelo lineal general quitamos del análisis la variable NIT:
+
+
+```{r}
+data_model1 <- subset(data_superfinanciera, select = c("Year", "Costo_ventas_cte_log", "PIB_2015_cte", "elecciones"))
+```
+
+
+Dado que se tiene pocos datos a nivel temporal, se elige el esquema out of sample para separar el conjunto de datos. Se parte el conjunto de datos en dos partes: entrenamiento (75%) y validación (25%):
+
+
+```{r}
+
+num_fil <- dim(data_model1)[1]
+N_train <- round(num_fil*0.75)
+set.seed(22)
+id_train <- sample(num_fil,size=N_train,replace=FALSE)
+data_train <- data_model1[id_train,] # Conjunto de entrenamiento
+data_train <- na.omit(data_train)
+data_test <- data_model1[-id_train,] # Conjunto de validación
+data_test <- na.omit(data_test)
+```
+
+
+## 3.2 MODELO LINEAL GENERAL
+
+### 3.2.1 CONSTRUCCIÓN DEL MODELO LINEAL GENERAL
+
+Se procede a crear el modelo de regresión general a través de la función **lm** de R. Como se puede observar toma una línea de R crear un modelod de regresión lineal:
+
+
+```{r}
+#modelo_lm <- lm(data$`Costo_ventas_cte_log`~., data = data) #Cuando hay espacios en el nombre de la columna
+modelo_lm <- lm(Costo_ventas_cte_log~., data = data_train)
+```
+
+
+Para observar los resultados obtenidos tales como los coeficientes, residuales, parámetros de ajuste, entre otros, se utiliza la función **summary*.
+
+
+```{r}
+(summary(modelo_lm))
+```
+
+
+Los **NA** significa que hay singularidad en los datos. Es decir que según lo visto en la última gráfica de correlación, si es significativa la correlación entre elecciones y PIB. Esto se debe a que la base de datos usada para predicir los costos de ventas solo tiene 3 datos en las variables explicativas (datos anuales) lo que no alcanza a reflejar la variablidad natural de los datos. Al margen de esto, se observa que aún así la única variable macroecómica elegida (PIB) no es un buen descriptor del comportamiento de Costo de Venta. 
+
+
+### 3.2.2 AJUSTE Y CAPACIDAD PREDICTIVA
+
+Dado que los coeficientes no dieron significativos, aún no se tienen las suficientes variables que expliquen el Costo de Ventas. Esto se puede ver reflejado en la curva de residuales donde teóricamente se espera encontrar Ruido Blanco, pero que en nuestro caso se ve claramente que existe una estructura lineal que aún no se ha capturado en los datos.
+
+
+```{r}
+plot(data_train$Costo_ventas_cte_log, modelo_lm$residuals, 
+     ylab="Residuals", 
+     xlab="Costo de venta escalado", 
+     main="Y vs Residuales") 
+abline(0, 0)     
+```
+
+
+También se puede observar que no se tiene un buen modelo mirando los **parámetros de Ajuste** que entrega la función **summary**. En partircular el Adjusted R-squared: -0.0005942 y p-value: 0.3853, son muestra de que no se capturó la variación de los datos y que el modelo en general no es representativo respectivamente.
+
+A manera de ejercicio se procede a graficar el modelo obtenido:
+
+
+```{r}
+library(ggplot2)  # load the package
+```
+
+
+```{r}
+(prelim_plot <- ggplot(data=data_train, aes(x = Year + PIB_2015_cte, y = Costo_ventas_cte_log)) +
+  geom_point() +
+  geom_smooth(method = "lm"))
+
+```
+
+
+Respecto a la **capacidad predictiva** del modelo se utiliza como métrica el Root Mean Squere Error (RMSE) para evaluar dicha capacidad. Aunque este análisis tiene sentido en caso de tener un modelo significativo, se hace a manera de ejercicio:
+
+
+```{r}
+RMSE = function(fit_data, observed){
+  sqrt(mean((fit_data - observed)^2))
+}
+```
+
+
+```{r}
+y_predict <- predict(modelo_lm,newdata = data_test, se.fit = TRUE) 
+RMSE_lm <- RMSE(y_predict$fit,data_test$Costo_ventas_cte_log)
+(RMSE_lm)
+```
+
+
+Como el modelo no es significativo, R entrega una adverterncia sobre la calidad de los resultados. Esto se ve reflejado con el RMSE donde se observa la mala predicción que entregó el modelo.
+
+
+### 3.2.3 ANÁLISIS DE CIFRAS
+
+Por los resultados anteriores se concluye que las cifras no son razonables al no contar un modelo adecuado.
+
+
+## 3.3 MODELO LINEAL DE EFECTOS MIXTOS
+
+Se procede a validar el modelo de efectos mixtos para verificar si es posible solucionar el problema anterior de tener tan pocos datos y lograr encontrar un modelo significativo. Al igual que el caso anterior se preparan los datos para ser utilizados en este modelo. La diferencia con el modelo anterior es que ahora la variable NIT entra el análisis para idenficiar cada empresa, por lo que la división de los datos en Train y Test ahora será por número de empresas y no por número de datos:
+
+
+```{r}
+data_model2 <- subset(data_superfinanciera, select = c("Year","NIT", "Costo_ventas_cte_log", "PIB_2015_cte", "elecciones"))
+```
+
+
+Se parte el conjunto de datos en dos partes: entrenamiento (75%) y validación (25%):
+
+
+```{r}
+
+empresas <- data.frame(unique(data_model2$NIT)) #Empresas bajo estudio detallado por NIT
+num_empresas <- dim(empresas)[1] #Número de empresas bajo estudio
+
+num_fil <- dim(data_model2)[1]
+N_train <- round(num_empresas*0.75) #75% para entrenamiento
+
+#Muestra aleatoria
+set.seed(22)
+NIT_sample <- sample(unique(data_model2$NIT), size=N_train)
+data_train <- data_model2[data_model2$NIT %in% NIT_sample ,]
+data_test <- data_model2[!(data_model2$NIT %in% NIT_sample) ,]
+
+```
+
+
+### 3.3.1 CONSTRUCCIÓN DEL MODELO LINEAL DE EFECTOS MIXTOS
+
+Para la construcción del este modelo se hace uso de la función **lme**, que aunque es más lento en su ejecución que su homólogo **lmer**, entrega información más detallada sobre la significancia del modelo y los coeficientes.
+
+Se cargan las librerías necesarias para llamar al modelo:
+
+```{r}
+library(lme4)
+library(nlme)
+```
+
+
+```{r}
+#modelo_2 <- lmer(Costo_ventas_cte_log~ Year+(Year|NIT),data = datamodel_1)
+#aux <- summary(modelo_2)
+#aux
+modelo_2 <- lme(Costo_ventas_cte_log ~ Year + PIB_2015_cte, random=~Year|NIT, data=data_train)
+#anova(m2)
+(summary(modelo_2))
+
+```
+
+
+Al igual que el modelo lineal general, los p_values no son significativos para este modelo, lo que significa que el PIB no es suficiente para explicar la variación de los costos de ventas. Al igual que el caso anterior la poca cantidad de datos dificulta el desarrollo del modelo dado que solo se tiene 3 datos para el PIB haciendo que de correlacionado con el resto de variables explicativas.
+
+
+### 3.3.2 AJUSTE Y CAPACIDAD PREDICTIVA
+
+Respecto al ajuste del modelo, si bien aún no se encuentra con un modelo que explique los costos de ventas, se puede observar que el modelo lineal mixto tuvo mejor ajuste que el modelo lineal general, debido a que los p-values estuvieron más cerca del nivel de significancia.
+
+Los coeficientes de los efectos fijos son los siguientes:
+
+
+```{r}
+fixef(modelo_2)
+```
+
+
+Por otra parte los efectos aleatorios del modelo son:
+
+
+```{r}
+ranef(modelo_2)
+
+```
+
+
+### 3.3.3 ANÁLISIS DE CIFRAS
+
+Al todavía no encontrar un modelo significativo no es posible hablar todavía de razonabilidad de las cifras obtenidos por este modelo.
+
+
+
+# 4. MODELAMIENTO AMPLIANDO LA BASE DE DATOS 2011 A 2018
+
+
+Con el objetivo de tener un modelo que explique los costos de ventas y así poder realizar un análisis más profundo, se extiende la base de datos con más información. Sin embargo al hacer esto se está mezclando dos tipos de información: La reportada según norma NIIF que empieza desde 2015, pero el resto de información proviene de la norma anterior colombiana, lo que puede generar cierta distorisión en la información. Conciente de este riesgo, igual se procede a ampliar la información.
+
+
+## 4.1 CONSTRUCCIÓN DE LA BASE DE DATOS AMPLIADA
+
+Agregando más información histórica de manera manual, la información por cada NIT con la Norma anterior se puede descargar en el siguiente enlace:
+
+
+<http://pie.supersociedades.gov.co/Pages/Default.aspx#/>
+
+
+Al digitar el NIT la página permite elegir entre NIIF y norma anterior y lo enlaza a la siguiente página web donde se consulta los Estados Financieros por Empresa:
+
+
+<http://pie.supersociedades.gov.co/Pages/Contenido.aspx?nit=830015601>
+
+
+En esta página se debe indicar **ESTADO DE RESULTADOS** para consultar el equivalente de Costos de Ventas por el rango de año elegido. La figura 5 es una muestra de la plataforma para descargar la información:
+
+
+![Figura 5. Muestra de la página web para obtener información histórica por NIT. Tomado de la Superfinanciera.](images/Super_por_NIT.png)
+
+
+Desafortunadamente **la información se debe descargar por cada empresa individualmente**, además los archivos no vienen de forma tabular lo que dificulta un poco la extracción automática a través de R. La figura 6 es una muestra de como es la información descargada de la superfinanciera. Se puede observar que guarda similitud con la forma en que se visualiza los datos en la página web. 
+
+
+![Figura 6. Muestra de la descarga realizada por cada empresa para obtener los Gastos de Ventas con la norma colombiana. Tomado de la Superfinanciera.](images/ExcelporNIT.png)
+
+
+Se procede a extraer los datos manualmente a través del copiado y pegado de la información y **se eliminaron del análisis las empresas que no tenían información histórica completa en este periodo de tiempo**. Esta base de datos se almacena en el archivo Excel **DataBase2.xlsx**
+
+Aunque se eliminaron datos de la muestra hablando en términos de empresas, la ventaja es que ahora se cuenta con más información a nivel temporal, que permite ver mayor variabilidad de las variables explicativas. El número de empresas luego de hacer esta depuración es de 20
+
+
+## 4.2 TRANSFORMACIÓN DE LA BASE DE DATOS AMPLIADA
+
+Al igual que el ejercicio anterior se procede a transformar las variables que representa dinero, así también a escalar los datos. Dado que este procedimiento se mostró en mayor detalle en puntos anteriores se hace en este punto de manera más rápida.
+
+
+```{r}
+# Carga de la información en memoria
+data_2 <- read_excel("DataBase2.xlsx")
+
+# Valores en constantes
+IPC_n <- 113.86
+data_2$Costo_ventas_cte <- data_2$Costo_ventas*IPC_n/data_2$IPCdic_empalme
+data_2$PIB_2015_cte <- data_2$PIB_2015*IPC_n/data_2$IPCdic_empalme
+data_2$SMMLV_cte <- data_2$SMMLV*IPC_n/data_2$IPCdic_empalme
+data_2$Balance_Fiscal_cte <- data_2$Balance_Fiscal*IPC_n/data_2$IPCdic_empalme
+
+# Nombre de las variables que no se desean escalar, en nuestro caso es Year y  NIT
+varnames <- c("Year", "NIT", "elecciones")
+
+# Vector que indica las variables que no se desean escalar
+index <- names(data_2) %in% varnames
+
+#data_superfinanciera <- scale(data_superfinanciera, center = FALSE, scale = TRUE)
+data_2[, !index] <- scale(data_2[, !index], center = FALSE, scale = TRUE)
+data_2 <- data.frame(data_2) #Para convertir de nuevo en dataframe
+data_2$Costo_ventas_cte_log <- log(data_2$Costo_ventas_cte) #A logaritmo
+(summary(data_2))
+
+```
+
+
+## 4.3 SELECCIÓN DE VARIABLES 
+
+Haciendo el gráfico de espagueti con la base de datos completa se puede observar que los datos por Empresa se ve mejor detallada y se puede ver claramente tendencias en muchos de estos. Se resalta que hay tanto tendencias positivas y negativas a lo largo que pasa el tiempo.
+
+
+```{r fig.align="center"}
+require(lattice)
+
+
+xyplot(Costo_ventas_cte~Year|NIT,data = data_2, type = c("g","p","r"),
+       index = function(x,y) coef(lm(y~x))[1],
+       xlab = "Año Reporte NIIF",
+       ylab = "Costo de Ventas(COP)",
+       aspect = "xy")
+```
+
+
+Respecto a las correlaciones entre variables independientes, nuevamente se grafica la información para ver el efecto al agregar más datos históricos a la muestra. Para este ejercicio se toman las variables que dieron menos correlacionadas de la base de datos financiera:
+
+- PIB_2015
+- elecciones
+- Balance_Fiscal_cte
+
+Graficando este nuevo conjunto de datos para los 3 años de estudio del taller se obtiene lo siguiente:
+
+
+```{r fig.align="center"}
+data <- subset(data_2, select = c("Year", "PIB_2015_cte", "elecciones", "Balance_Fiscal_cte"))
+pairs(data[,-1], diag.panel = panel.hist, lower.panel = panel.cor)
+```
+
+
+En este caso elecciones no da correlacionado con el PIB.
+
+
+
+## 4.4 MODELO DE EFECTOS MIXTOS
+
+
+Se procede a validar directamente el modelo de efectos para comprobar si
+
+## 4.4.1 SEPARACIÓN DE LOS DATOS
+
+
+```{r}
+data_model3 <- subset(data_2, select = c("Year", "NIT", "Costo_ventas_cte_log", "TRM", "SMMLV_cte","PIB_2015_cte", "Balance_Fiscal_cte", "elecciones"))
+```
+
+
+Se parte el conjunto de datos en dos partes: entrenamiento (75%) y validación (25%):
+
+
+```{r}
+
+empresas <- data.frame(unique(data_model3$NIT)) #Empresas bajo estudio detallado por NIT
+num_empresas <- dim(empresas)[1] #Número de empresas bajo estudio
+
+num_fil <- dim(data_model3)[1]
+N_train <- round(num_empresas*0.75) #75% para entrenamiento
+
+#Muestra aleatoria
+set.seed(22)
+NIT_sample <- sample(unique(data_model3$NIT), size=N_train)
+data_train <- data_model3[data_model3$NIT %in% NIT_sample ,]
+data_test <- data_model3[!(data_model3$NIT %in% NIT_sample) ,]
+
+```
+
+
+## 4.4.2 CONSTRUCCIÓN DEL MODELO
+
+
+```{r}
+modelo_3 <- lme(Costo_ventas_cte_log ~ Year + PIB_2015_cte + TRM + Balance_Fiscal_cte + elecciones, random=~Year|NIT, data=data_train)
+#anova(m2)
+(summary(modelo_3))
+```
+
+
+### 4.4.3 AJUSTE Y CAPACIDAD PREDICTIVA
+
+Al igual que los modelos anteriores, aun no se logra llegar a un nivel de signifancia aceptable con el modelo, sin embargo se observa que incluir más datos al modelo ayuda a captar más la variación de las variables independientes (que ahora tiene 8 datos), situación que se observa en el correlograma y los bajos valore de p-value. Es probable que agregando más datos se logre finalmente tener un modelo significato, sin embargo, para el sector elegido es probable que ya no se cumpla la restricción de tener más de 20 empresas bajo análisis, porque la muestra de empresas con un rango de mayor fechas sería menor. Lo anterior implica cambiar desde el origen la base de datos al buscar otro sector que cumplan con las condiciones dadas para el taller.
+
+### 4.4.4 ANÁLISIS DE CIFRAS
+
+
+Al igual que los modelos anteriores, no es factible hablar de razonabilidad de las cifras dado que aún no se cuenta con un modelo apropiado para hacer regresión. Sin embargo, en este punto es claro que las cifras se deben analizar en su dimensión original y validar si tomando valores dentro del dominio del entrenamiento se obtienen valores con sentido en el dominio de la variable que se está prediciendo.
+
+En nuestro caso es necesario hacer uso de la exponencial y la función **unscale** para obtener el y_predicho en la escala original de los datos.
+
+
+# 5. ESTIMACIÓN DE ESFUERZO
+
+
+Habiendo ejecutado todos los pasos que normalmente se realizan para el desarrollo de un modelo lineal, se obtiene la siguiente estimación de esfuerzo por cada una de las actividades ejecutadas:
+
+* **Consolidación de información:** Esta actividad tuvo un estimado del **40% del esfuerzo**, debido a que la información no está disponible para descarga masiva, sino que se debe extraer de manera individual de diversas fuentes. Adicionalmente los datos se descargan en formatos que no se pueden cargar directamente en memoria. Por lo anterior hubo un gran esfuerzo buscando, descargando y consolidando la información dado que fue un proceso puramente manual (con los riesgos de error humano que esto conlleva). Por otra parte, como se mostró en el informe hubo dos iteraciones con la consolidación de la información. En la segunda iteración se buscó 5 años más de historia con el ánimo de mejorar la significancia del modelo, y este trabajo implicó buscar por cada NIT la información histórica e igualmente consolidar la información de manera manual.
+
+* **Transformación de varibles y análisis descriptivo:** Esta actividad tuvo un estimado del **25% del esfuerzo**. Esta fase requiere gran trabajo dado que se debe analizar adecuadamente la información para filtrar aquellos datos que no aportan en el modelamiento, así como organizar y prepar la información que será utilizado en el modelo. Esto último se ve reflejado en el reporte donde se crearon diversas copias de los datos para organizarlos según las necesidades del modelo lineal y modelo lineal de efectos mixtos. En esta etapa se iteró 3 veces, buscando la transformación adecuada que brindara un modelo significativo, pero no se logró tal objetivo.
+
+
+* **Ajuste y validación de modelos:** Esta actividad tuvo un estimado del **25% del esfuerzo**. Aunque Software como R que ya vienen parametrizados para aplicar los modelos de manera ágil, donde  por ejemplo toma tan solo una linea de código ejecutar un modelo de regresión lineal, el mayor esfuerzo vino en el análisis de los resultados. Dado que el primer modelo que se probó no dio significativo, hubo gran esfuerzo de análisis verificando los motivos, y ensayando otros 2 modelos más buscando encontrar un modelo que cumpliera con la predicción esperada. 
+
+
+
+* **Redacción del reporte:** Esta actividad tuvo un estimado de **10% del esfuerzo**. Gracias a la facilidad de Rmarkdown fue posible ir redactando el informe mientras se programaba cada una de las tareas anteriormente descritas.
+
+
+
+# 6. CONCLUSIONES
+
+
+Los modelos lineales tienen una amplia variadad de variaciones que se ajustan en una gran variedad de problemas y que se vuelven atractivos por su simplicidad en la representación final del modelo, el cual consiste en una línea recta que lo hace fácilmente transportable, es replicable e interpretable.
+
+Al ser un método estadístico es importante verificar los supuestos más importantes y tener cuidado en el manejo de los datos. Para el manejo de los datos se encuentra que es importante tener presente la escala de las variables, donde dependiendo las magnitues siempre es aconsejable estandarizar los datos. Por otra parte, aunque todos los supuestos son importantes, se resalta la utilidad de validar si los residulos son Ruido Blanco, porque de no serlo implica que aún hay estructuras en los datos que aún no se han recogido a través del modelo.
+
+Al hacer un ejercicio completo desde la consolidación de la información hasta el ajuste y la validación de los modelos, se observa que la consolidación de la información lleva consigo un esfuerzo considerable sino se cuenta con una fuente de descarga masiva de los mismos. También se observa que es importante conocer el contexto de los datos para saber qué variables pueden explicar una variable de interés, y no tener variables sin importancia que entreguen relaciones espurias.
+
+Ninguno del modelos probados dieron significativos, sin embargo, en el gráfico de espagueti se observa que tener un modelo lineal paara este grupo de empresas es posible por su variación con el tiempo, sin embargo, al todavía no ser significativo es necesario o ampliar la muestra temporal de los datos o agregar más información exógena que ayude a explicar los Costos de Ventas.
+
+
+
+
+
+
